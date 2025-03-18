@@ -68,11 +68,11 @@ vm_page_alloc(void)
   // table is structured, please see the "free_range" helper fucntion.
   // YOUR CODE HERE
 
-  struct run *r;
+  struct frame *r;
   
-  r = kmem.freelist;
+  r = frame_table;
   if(r)
-    kmem.freelist = r->next;
+    frame_table = r->next;
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
@@ -92,7 +92,7 @@ vm_page_free(void *pa)
   // in the table.
   // YOUR CODE HERE
 
-  struct run *r;
+  struct frame *r;
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("vm_page_free");
@@ -100,10 +100,10 @@ vm_page_free(void *pa)
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
 
-  r = (struct run*)pa;
+  r = (struct frame*)pa;
 
-  r->next = kmem.freelist;
-  kmem.freelist = r;
+  r->next = frame_table;
+  frame_table = r;
   
 }
 
@@ -181,20 +181,20 @@ vm_page_insert(pagetable_t pagetable, uint64 va, uint64 pa, int perm)
     //       panicking?
     // YOUR CODE HERE
 
+  uint64 a;
   pte_t *pte;
 
-  /*TODO*/
-  pte = walk_pgtable(pagetable, va, 0);
+  if((va % PGSIZE) != 0)
+    panic("pageinsert: va not aligned");
+
+  a = va;
+  if((pte = walk_pgtable(pagetable, a, 1)) == 0)
+    return -1;
+  if(*pte & PTE_V)
+    panic("pageinsert: remap");
+  *pte = PA2PTE(pa) | perm | PTE_V;
+  return 0;
   
-  //if(address taken || pa !aligned){
-  //panic("remap");
-  //return -1;
-  //}
-  
-  //allocate pte with perm permissions (?)
-  //vm_page_alloc();
-  //
-  //return 0;
   return -1;
 }
 
@@ -227,7 +227,7 @@ vm_page_remove(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       panic("uvmunmap: not a leaf");
     if(do_free){
       uint64 pa = PTE2PA(*pte);
-      kfree((void*)pa);
+      //kfree((void*)pa);
     }
     *pte = 0;
   }
@@ -270,7 +270,7 @@ vm_map_range(pagetable_t pagetable, uint64 va, uint64 size, int perm)
       panic("mappages: remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
     if(a == last)
-      return;
+      break;
     vm_page_insert(pagetable, va, pa, perm);
     a += PGSIZE;
     pa += PGSIZE;
@@ -398,7 +398,7 @@ kernel_map_range(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int p
       panic("mappages: remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
     if(a == last)
-      return;
+      break;
     a += PGSIZE;
     pa += PGSIZE;
   }
